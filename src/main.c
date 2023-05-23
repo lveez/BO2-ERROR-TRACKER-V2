@@ -66,7 +66,7 @@ void PrintHelp()
     printf("%s%*s\n", "-p", length-2, "disable plutonium anticheat warning");
     printf("%s%*s\n", "-t time_in_ms", length-13, "change how often the values refresh");
     printf("%s%*s\n", "-h", length-2, "display help information");
-    printf("\nFor more info see the github.");
+    printf("\nFor more info see https://github.com/lveez/BO2-ERROR-TRACKER-V2.");
 }
 
 int main(int argc, char** argv)
