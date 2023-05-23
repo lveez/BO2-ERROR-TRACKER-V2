@@ -1,8 +1,8 @@
 # BO2-ERROR-TRACKER-V2
 
-The program will work with both redacted and plutonium (make sure to disable the plutonium anticheat).
+The program will work with both redacted and plutonium (make sure to disable the plutonium anticheat). 
 
-![Screenshot 2023-05-23 202120](https://github.com/lveez/BO2-ERROR-TRACKER-V2/assets/65928629/f28d05cb-1586-489c-98be-407ba23ab6e2)
+![Screenshot 2023-05-23 203158](https://github.com/lveez/BO2-ERROR-TRACKER-V2/assets/65928629/cffe863b-17c7-44d4-8b19-490b589965dc)
 
 ### Errors tracked:
 - exceeded maximum number of child server script variables
