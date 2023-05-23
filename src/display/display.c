@@ -19,3 +19,16 @@ int SetCursorToLine(int line_number)
     SetConsoleCursorPosition(std_out, cursor_pos);
     return GetLastError();
 }
+
+int GetCurrentConsoleLine()
+{
+    HANDLE std_out;
+    CONSOLE_SCREEN_BUFFER_INFO cbsi;
+
+    std_out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (std_out == INVALID_HANDLE_VALUE)
+        return GetLastError();
+
+    GetConsoleScreenBufferInfo(std_out, &cbsi);
+    return cbsi.dwCursorPosition.Y;
+}

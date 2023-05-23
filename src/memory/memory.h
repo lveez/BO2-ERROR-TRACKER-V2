@@ -11,7 +11,9 @@ Contains functions for reading process memory
 
 // returns the process id of Black Ops II if successful, otherwise returns 0
 // doesn't work with pluto due to anti-cheat
-DWORD GetProcessID();
+DWORD GetProcessID(const char* name);
+
+DWORD GetProcessIDFromWindow();
 
 /*
 simple wrapper for OpenProcess() which adds some error handling
