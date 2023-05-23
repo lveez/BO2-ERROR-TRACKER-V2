@@ -349,7 +349,7 @@ int main(int argc, char** argv)
                 printf("snapshot entities: %10d / 2147483647\n", num_snapshot_ents);
             }
             if (gspawn)
-                printf("num entities: %6d / 1022\n", num_ents);
+                printf("num entities: %15d / 1022\n", num_ents);
             if (anim)
             {
                 if (!simple)
