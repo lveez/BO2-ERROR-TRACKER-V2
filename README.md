@@ -2,7 +2,7 @@
 
 The program will work with both redacted and plutonium (make sure to disable the plutonium anticheat). 
 
-![Screenshot 2023-05-23 203158](https://github.com/lveez/BO2-ERROR-TRACKER-V2/assets/65928629/cffe863b-17c7-44d4-8b19-490b589965dc)
+![Screenshot 2023-05-24 081109](https://github.com/lveez/BO2-ERROR-TRACKER-V2/assets/65928629/0e37f4fe-ccc7-4230-8486-66f4a4fd187e)
 
 ### Errors tracked:
 - exceeded maximum number of child server script variables
