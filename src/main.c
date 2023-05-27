@@ -2,51 +2,35 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <Psapi.h>
+#include <time.h>
 
 #include "getopt/getopt.h"
 #include "memory/memory.h"
 #include "memory/addresses.h"
 #include "display/display.h"
 
-DWORD UpdateFrametime(HANDLE process_handle, int* frametime)
-{
-    return ReadValue(process_handle, vComFrametime, frametime, 4);
-}
+#include "datatypes/entities.h"
+#include "datatypes/level.h"
+#include "datatypes/variable.h"
+#include "datatypes/anim.h"
 
-DWORD UpdateNumSnapshotEntities(HANDLE process_handle, int* num_snapshot_entities)
-{
-    return ReadValue(process_handle, numSnapshotEntities, num_snapshot_entities, 4);
-}
+/* options struct */
+typedef struct {
+    uchar dump_ents;
+    uchar dump_anim;
 
-DWORD UpdateEntities(HANDLE process_handle, int* entity_count)
-{
-    return ReadValue(process_handle, numEntites, entity_count, 4);
-}
+    uchar child;
+    uchar parent;
+    uchar anim;
+    uchar memtree;
+    uchar gspawn;
+    uchar reset;
+    uchar frametime;
 
-DWORD UpdateNumEntities(HANDLE process_handle, int* num_entities)
-{
-    return ReadValue(process_handle, vNumEntites, num_entities, 4);
-}
-
-DWORD UpdateAnimInfo(HANDLE process_handle, unsigned short* animinfo)
-{
-    return ReadValue(process_handle, vAnimInfoNext, animinfo, 2);
-}
-
-DWORD UpdateParent(HANDLE process_handle, unsigned long address, unsigned short* parent_next)
-{
-    return ReadValue(process_handle, address, parent_next, 2);
-}
-
-unsigned short UpdateChild(HANDLE process_handle, unsigned long address, unsigned short* child_next)
-{
-    return ReadValue(process_handle, address, child_next, 2);
-}
-
-unsigned short UpdateMemTree(HANDLE process_handle, unsigned long address, unsigned short* head)
-{
-    return ReadValue(process_handle, address, head, 2*0x10);
-}
+    uchar verbose;
+    uchar simple;
+    ushort sleep_time;
+} launchOptions;
 
 void PrintHelp()
 {
@@ -61,6 +45,7 @@ void PrintHelp()
     printf("%s%*s\n", "-r", length-2, "track reset info");
     printf("%s%*s\n", "-f", length-2, "track frametime info");
     printf("\nMiscellaneous:\n\n");
+    printf("%s%*s\n", "-d e/a", length - 6, "dump entity or anim info respectively to file");
     printf("%s%*s\n", "-s", length-2, "display simple information (only max values)");
     printf("%s%*s\n", "-v", length-2, "display verbose memtree information");
     printf("%s%*s\n", "-p", length-2, "disable plutonium anticheat warning");
@@ -69,119 +54,376 @@ void PrintHelp()
     printf("\nFor more info see github.com/lveez/BO2-ERROR-TRACKER-V2.");
 }
 
+int DumpAnim(HANDLE process_handle)
+{
+     /* open file for dump */
+    FILE* file;
+    char filename[128];
+
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    
+    if (sprintf(filename, "%d %02d %02d %02d-%02d-%02d.txt", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec) < 0)
+        return -1;
+
+    file = fopen(filename, "w");
+    if (!file)
+        return -1;
+
+    fprintf(file, "ANIM INFO DUMP\n");
+
+    int error;
+    /* get anim info */
+    XAnimInfo ganiminfo[4096];
+    error = ReadValue(process_handle, 0x2b3f140, ganiminfo, sizeof(XAnimInfo)*4096);
+    if (error)
+    {
+        printf("ERROR: ReadValue failed (code %d).\n", error);
+        CloseHandle(process_handle);
+        return -1;
+    } 
+    
+    XAnimParts streamedParts;
+    memset(&streamedParts, 0, sizeof(XAnimParts));
+
+    char buffer[256];
+    int num_found = 0;
+    for (int i = 0; i < 4096; i++)
+    {
+        memset(buffer, 0, 256);
+        fprintf(file, "\n---------------\n");
+        fprintf(file, "anim_index: %d\n", i);
+
+        /* check if there is a valid pointer to XAnimParts */
+        if (ganiminfo[i].anim.parts == 0)
+        {
+            fprintf(file, "status: no parts found\n");
+            continue;
+        }
+
+        /* get the data from the XAnimParts* */
+        ReadValue(process_handle, ganiminfo[i].anim.parts, &streamedParts, sizeof(XAnimParts));
+        if (streamedParts.frequency < 0.01 )
+        {
+            fprintf(file, "status: likely unused\n");
+        }
+        else 
+        {
+            fprintf(file, "status: likely used\n");
+            num_found++;
+        }
+
+        /* get anin name */
+        ReadValue(process_handle, streamedParts.name, buffer, 256);
+        fprintf(file, "anim_name: %s\n", buffer);
+
+        /* get notify name*/
+        if (ganiminfo[i].notifyName)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*ganiminfo[i].notifyName)+4, &buffer, 256);
+            fprintf(file, "notify_name: %s\n", buffer);
+        }
+        else 
+        {
+            fprintf(file, "notify_name: \n");
+        }
+
+        fprintf(file, "is_looping: %d\n", streamedParts.bLoop);
+
+        if (ganiminfo[i].notifyType)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*ganiminfo[i].notifyType)+4, &buffer, 256);
+            fprintf(file, "notify_type: %s\n", buffer);
+        }
+        else
+        {
+            fprintf(file, "notify_type: \n");
+        }
+
+        fprintf(file, "notify_count: %d\n", streamedParts.notifyCount);
+        fprintf(file, "num_frames: %d\n", streamedParts.numFrames);
+        fprintf(file, "frame_rate: %.2f\n", streamedParts.framerate);
+        fprintf(file, "frequency: %.4f\n", streamedParts.frequency);
+        fprintf(file, "anim_time: %.4f\n", ganiminfo[i].state.currentAnimTime);
+        fprintf(file, "goal_time: %.4f\n", ganiminfo[i].state.goalTime);
+    }
+    fprintf(file, "\n%d anims in use\n", num_found);
+    return 0;
+}
+
+int DumpEntities(HANDLE process_handle)
+{
+    /* open file for dump */
+    FILE* file;
+    char filename[128];
+
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    
+    if (sprintf(filename, "%d %02d %02d %02d-%02d-%02d.txt", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec) < 0)
+        return -1;
+
+    file = fopen(filename, "w");
+    if (!file)
+        return -1;
+
+    fprintf(file, "ENTITY INFO DUMP\n");
+
+    int error;
+    /* get level struct */
+    level_locals_t level;
+    error = ReadValue(process_handle, 0x2338780, &level, sizeof(level));
+    if (error)
+    {
+        printf("ERROR: ReadValue failed (code %d).\n", error);
+        CloseHandle(process_handle);
+        return -1;
+    } 
+
+    /* get entities */
+    gentity_t gentities[1024];
+    error = ReadValue(process_handle, (DWORD)level.gentitites, &gentities, sizeof(gentity_t)*1024);
+    if (error)
+    {
+        printf("ERROR: ReadValue failed (code %d).\n", error);
+        CloseHandle(process_handle);
+        return -1;
+    } 
+
+    /* write entity info to dump file */
+    char buffer[256];
+    int in_use_count = 0;
+    for (int i = 0; i < 0x400; i++)
+    {
+        memset(buffer, 0, 256);
+        fprintf(file, "\n---------------\n");
+        fprintf(file, "ent_num: %d\n", i);
+        fprintf(file, "in_use: %d\n", gentities[i].r.inuse);
+
+        if (gentities[i].r.inuse)
+            in_use_count++;
+
+        if (gentities[i].birthTime)
+            fprintf(file, "time_active: %d\n", level.time-gentities[i].birthTime);
+        else
+            fprintf(file, "time_active: 0\n");
+
+        /* get type */
+        if (gentities[i].s.eType)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*gentities[i].s.eType)+4, buffer, 256);
+            fprintf(file, "type: %s\n", buffer);
+        }
+        else
+        {
+            fprintf(file, "type: null\n");
+        }
+
+        /* get class */
+        if (gentities[i].classname)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*gentities[i].classname)+4, buffer, 256);
+            fprintf(file, "class: %s\n", buffer);
+        }
+        else
+        {
+            fprintf(file, "class: null\n");
+        }
+
+        /* get optional values */
+        if (gentities[i].targetname)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*gentities[i].targetname)+4, buffer, 256);
+            fprintf(file, "targetname: %s\n", buffer);
+        }
+
+        if (gentities[i].target)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*gentities[i].target)+4, buffer, 256);
+            fprintf(file, "target: %s\n", buffer);
+        }
+        
+        if (gentities[i].script_noteworthy)
+        {
+            ReadValue(process_handle, 0x2bf3280+(0x18*gentities[i].script_noteworthy)+4, buffer, 256);
+            fprintf(file, "script_noteworthy: %s\n", buffer);
+        }
+    }
+    fprintf(file, "\n\nTotal number of entities in use: %d\n", in_use_count);
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
-    
-    /* handle arguments */
-    int opt = 0;
     /* options */
-    int selected = 0;
-    int child = 0; // -c
-    int parent = 0; // -p
-    int anim = 0; // -a
-    int memtree = 0; // -m
-    int gspawn = 0; // -g
-    int reset = 0; // -r
-    int frametime = 0; // -f
-    int verbose = 0; // -v
-    int simple = 0; // -s
-    int pluto = 0; // -p
-    unsigned int refresh_rate = 50; // -t time
+    launchOptions options;
+    memset(&options, 0, sizeof(launchOptions));
+    uchar selected = 0;
+    options.sleep_time = 50; // default 50ms
 
-
-    while ((opt = getopt(argc, argv, "cpamgrhfvspt:")) != -1)
+    /* handle arguments */
+    {
+    int opt;
+    while ((opt = getopt(argc, argv, "cpamgrfvsht:d:")) != -1)
     {
         switch (opt) {
+            // just use to dump current information
+            case 'd':
+                switch (optarg[0]) {
+                    case 'e':
+                        /* dump entities */
+                        options.dump_ents = 1;
+                        break;
+                    case 'a':
+                        /* dump anims */
+                        options.dump_anim = 1;
+                        break;
+                    default:
+                        /* invalid argument */
+                        printf("Invalid arguments passed.\nUse -d e or -d a to dump entities or anims respectively.\n");
+                        return -1;
+                }
+                break;
+            
+            // select what will be shown
             case 'c':
-                child = 1;
+                /* child */
+                options.child = 1;
                 selected = 1;
                 break;
+            
             case 'p':
-                parent = 1;
+                /* parent */
+                options.parent = 1;
                 selected = 1;
                 break;
+
             case 'a':
-                anim = 1;
+                /* anim */
+                options.anim = 1;
                 selected = 1;
                 break;
+            
             case 'm':
-                memtree = 1;
+                /* memtree */
+                options.memtree = 1;
                 selected = 1;
                 break;
+            
             case 'g':
-                gspawn = 1;
+                /* gspawn */
+                options.gspawn = 1;
                 selected = 1;
                 break;
+
             case 'r':
-                reset = 1;
+                /* reset */
+                options.reset = 1;
                 selected = 1;
                 break;
+
             case 'f':
-                frametime = 1;
+                /* frametime */
+                options.frametime = 1;
                 selected = 1;
                 break;
+
+            // select how it will be shown
             case 'v':
-                verbose = 1;
+                /* verbose memtree */
+                options.verbose = 1;
                 break;
-            case 't':
-                refresh_rate = atoi(optarg);
-                break;
+            
             case 's':
-                simple = 1;
+                /* simple */
+                options.simple = 1;
                 break;
-            case 'n':
-                pluto = 1;
+
+            case 't':
+                /* sleep time */
+                options.sleep_time = strtol(optarg);
+                if (options.sleep_time == 0)
+                {
+                    options.sleep_time = 50;
+                    printf("Invalid time passed with -t. Reset to default of 50ms.\n");
+                }
                 break;
+
+            default: 
+                /* invalid inputs */
+                printf("Invalid arguments passed.\n");;
             case 'h':
-                PrintHelp();
-                return 0;
-            default:
-                printf("Invalid arguments passed to %s.\n", argv[0]);
-                PrintHelp();
+                /* help */  
+                PrintHelp(); 
                 return -1;
         }
     }
-
+    }
+    
     if (!selected)
     {
-        child = 1; // -c
-        parent = 1; // -p
-        anim = 1; // -a
-        memtree = 1; // -m
-        gspawn = 1; // -g
-        reset = 1; // -r
-        frametime = 1; // -f
-    }    
-
+        options.child = 1;
+        options.parent = 1;
+        options.anim = 1;
+        options.memtree = 1;
+        options.gspawn = 1;
+        options.reset = 1;
+        options.frametime = 1;
+    }
+    
+    /* get start line */
     printf("\n");
     int start_line = GetCurrentConsoleLine();
-    int max_line = start_line;
 
-    int error = 0;
-    int com_frametime = 0;
-    int num_snapshot_ents = 0;
-    int entity_count = 0;
-    int num_ents = 0;
-    unsigned short animinfo = 0;
-    unsigned short parent_next = 0;
-    unsigned short child_next = 0;
-    unsigned short memtree_head[0x10] = { 0 };
+    DWORD process_id = 0;
+    HANDLE process_handle = 0;
+    int error;
 
-    unsigned short anim_max = 0;
-    unsigned short parent_max = 0;
-    unsigned short child_max = 0;
-    unsigned short memtree_max = 0;
+    /* values to be read from game */
+    level_locals_t gLevel;
+    memset(&gLevel, 0, sizeof(level_locals_t));
 
-    unsigned long parent_address = 0;
-    unsigned long child_address = 0;
-    unsigned long memtree_address = 0;
+    scrVarGlob_t gScrVarGlob;
+    memset(&gScrVarGlob, 0, sizeof(scrVarGlob_t));
+
+    ChildVariableValue child_first;
+    ushort child_next = 0;
+    ushort child_max = 0;
+
+    ObjectVariableValue parent_first;
+    ushort parent_next = 0;
+    ushort parent_max = 0;
+
+    XAnimInfo gAnimInfo[4096];
+    XAnimParts parts;
+    memset(&parts, 0, sizeof(XAnimParts));
+    memset(gAnimInfo, 0, 4096*sizeof(XAnimInfo));
+    ushort anim_in_use;
+    ushort anim_next;
+    ushort anim_max;
+
+    uint memtree_head = 0;
+    ushort memtree_next[16];
+    memset(memtree_next, 0, 16*sizeof(ushort));
+    ushort memtree_max = 0;
+
+    gentity_t gEntities[1024];
+    memset(gEntities, 0, sizeof(gentity_t)*1024);
+    ushort num_entities = 0;
+    ushort num_ents_in_use = 0;
+
+    uint snapshot_ents = 0;
+    uint num_snapshot_ents = 0;
+
+    uint frametime = 0;
 
     while (1)
     {
-        DWORD process_id = 0;
-        HANDLE process_handle = 0;
+        error = 0;
+        /* Look for process repeatedly until it is found. */
         Sleep(2500);
 
+        /* This gets the process id from the window name. */
         process_id = GetProcessIDFromWindow();
         if (!process_id)
         {
@@ -195,197 +437,306 @@ int main(int argc, char** argv)
             printf("ERROR: Could not get process handle.\n");
             CloseHandle(process_handle);
             continue;
-        }   
-        char buffer[5096] = { 0 };  
-        GetModuleBaseName(process_handle, NULL, buffer, 1024);
-        if (strstr(buffer, "plutonium-bootstrapper-win32.exe") != 0)
-        {
-            if (!pluto)
-            {
-                printf("Make sure plutonium anticheat is disabled then press enter.\n");
-                scanf("s");
-            }
         }
 
-        /* get addresses */
-        error = ReadValue(process_handle, pParentVariableValue, &parent_address, 4);
-        if (error)
+        /* if it pluto display warning about anticheat. */
         {
-            printf("ERROR: ReadValue failed (code %d).\n", error);
-            CloseHandle(process_handle);
-            continue;
-        } 
-        parent_address = parent_address + oParentNext;
+        char buffer[512];
+        GetModuleBaseName(process_handle, NULL, buffer, 512);
+        if (strstr(buffer, "plutonium-bootstrapper-win32.exe") != 0)
+        {
+            printf("Make sure plutonium anticheat is disabled then press enter.\n");
+            scanf("s");
+        }
+        }
 
-        error = ReadValue(process_handle, pChildVariableValue, &child_address, 4);
-        if (error)
+        /* process found can now start reading values. */
+        /* wait for map to be loaded up */
+        printf("Waiting for map to be loaded...\n");
+        while (gLevel.clients == 0)
         {
-            printf("ERROR: ReadValue failed (code %d).\n", error);
-            CloseHandle(process_handle);
-            continue;
-        } 
-        child_address = child_address + oChildNext;
+            error = ReadValue(process_handle, a_level, &gLevel, sizeof(level_locals_t));
+            if (error)
+            {
+                printf("ERROR: ReadValue failed (code %d).\n", error);
+                CloseHandle(process_handle);
+                break;
+            } 
+            Sleep(500);
+        }
 
-        error = ReadValue(process_handle, pGScrMemTreeGlobHead, &memtree_address, 4);
+        if (error)
+            continue;
+
+        /* dump ents and anims */
+        if (options.dump_anim)
+        {
+            printf("Dumping anims... ");
+            if (DumpAnim(process_handle) == -1)
+                printf("Error.\n");
+            else
+                printf("Done.\n");
+            return 0;
+        }
+
+        if (options.dump_ents)
+        {
+            printf("Dumping ents... ");
+            if (DumpEntities(process_handle) == -1)
+                printf("Error.\n");
+            else
+                printf("Done.\n");
+            return 0;
+        }
+
+        /* read addresses */
+        error = ReadValue(process_handle, a_level, &gLevel, sizeof(level_locals_t));
         if (error)
         {
             printf("ERROR: ReadValue failed (code %d).\n", error);
             CloseHandle(process_handle);
-            continue;
+            break;
+        } 
+
+        error = ReadValue(process_handle, a_gScrVarGlob, &gScrVarGlob, sizeof(scrVarGlob_t));
+        if (error)
+        {
+            printf("ERROR: ReadValue failed (code %d).\n", error);
+            CloseHandle(process_handle);
+            break;
+        } 
+
+        error = ReadValue(process_handle, p_gScrMemTreeGlobHead, &memtree_head, sizeof(uint));
+        if (error)
+        {
+            printf("ERROR: ReadValue failed (code %d).\n", error);
+            CloseHandle(process_handle);
+            break;
         } 
 
         start_line = GetCurrentConsoleLine();
 
         while (1)
         {
-            /* Update values */
-            if (frametime)
+            /* update child */
+            if (options.child)
             {
-                error = UpdateFrametime(process_handle, &com_frametime);
+                error = ReadValue(process_handle, gScrVarGlob.childVariableValue, &child_first, sizeof(ChildVariableValue));
                 if (error)
                 {
                     printf("ERROR: ReadValue failed (code %d).\n", error);
                     CloseHandle(process_handle);
                     break;
-                }
+                } 
+
+                child_next = child_first.next;
+                if (child_next > child_max)
+                    child_max = child_next;
             }
 
-            if (reset)
+            /* update parent */
+            if (options.parent)
             {
-                error = UpdateNumSnapshotEntities(process_handle, &num_snapshot_ents);
+                error = ReadValue(process_handle, gScrVarGlob.objectVariableValue, &parent_first, sizeof(ObjectVariableValue));
                 if (error)
                 {
                     printf("ERROR: ReadValue failed (code %d).\n", error);
                     CloseHandle(process_handle);
                     break;
-                }
+                } 
 
-                error = UpdateEntities(process_handle, &entity_count);
+                parent_next = parent_first.u.f.next;
+                if (parent_next > parent_max)
+                    parent_max = parent_next;
+            }
+
+            /* update anim */
+            if (options.anim)
+            {
+                anim_in_use = 0;
+                error = ReadValue(process_handle, a_gAnimInfo, gAnimInfo, sizeof(XAnimInfo)*4096);
                 if (error)
                 {
-                    printf("ERROR: ReadValue failed (code %d).\n", error);
+                    printf("ERROR1: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                } 
+
+                for (int i = 0; i < 4096; i++)
+                {
+                    if (gAnimInfo[i].anim.parts == 0)
+                        continue;
+                    
+                    error = ReadValue(process_handle, gAnimInfo[i].anim.parts, &parts, sizeof(XAnimParts));
+                    if (error)
+                    {
+                        printf("ERROR2: ReadValue failed (code %d) (%08x) [%d].\n", error, gAnimInfo[i].anim.parts, i);
+                        CloseHandle(process_handle);
+                        break;
+                    } 
+                    if (parts.frequency > 0.001)
+                        anim_in_use++;
+                }
+
+                if (error)
+                    break;
+
+                anim_next = gAnimInfo[0].next;
+                if (anim_next > anim_max)
+                    anim_max = anim_next;
+
+                if (anim_next == 0)
+                {
+                    DumpAnim(process_handle);
+                    return 0;
+                }
+            }
+
+            /* update memtree */
+            if (options.memtree)
+            {
+                error = ReadValue(process_handle, memtree_head, &memtree_next, sizeof(ushort)*16);
+                if (error)
+                {
+                    printf("ERROR3: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                } 
+
+                for (int i = 0; i < 6; i++)
+                {
+                    if (memtree_next[i] > memtree_max)
+                        memtree_max = memtree_next[i];
+                }
+            }
+
+            /* update gspawn */
+            if (options.gspawn)
+            {
+                num_ents_in_use = 0;
+                error = ReadValue(process_handle, gLevel.gentitites, &gEntities, sizeof(gentity_t)*1024);
+                if (error)
+                {
+                    printf("ERROR4: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                } 
+
+                for (int i = 0; i < 1024; i++)
+                {
+                    if (gEntities[i].r.inuse)
+                        num_ents_in_use++;
+                }
+
+                error = ReadValue(process_handle, a_level+0xc, &gLevel.num_entities, sizeof(int));
+                if (error)
+                {
+                    printf("ERROR5: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                } 
+
+                if (gLevel.num_entities == 1022)
+                {
+                    DumpEntities(process_handle);
+                    return 0;
+                }
+            }
+
+            /* update reset */
+            if (options.reset)
+            {
+                error = ReadValue(process_handle, a_numEntites, &snapshot_ents, sizeof(int));
+                if (error)
+                {
+                    printf("ERROR6: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                }
+
+                error = ReadValue(process_handle, a_numSnapshotEntities, &num_snapshot_ents, sizeof(int));
+                if (error)
+                {
+                    printf("ERROR7: ReadValue failed (code %d).\n", error);
                     CloseHandle(process_handle);
                     break;
                 }
             }
 
-            if (gspawn)
+            /* update frametime */
+            if (options.frametime)
             {
-                error = UpdateNumEntities(process_handle, &num_ents);
+                error = ReadValue(process_handle, a_comFrametime, &frametime, sizeof(int));
                 if (error)
                 {
-                    printf("ERROR: ReadValue failed (code %d).\n", error);
+                    printf("ERROR8: ReadValue failed (code %d).\n", error);
                     CloseHandle(process_handle);
                     break;
                 }
             }
 
-            if (anim)
-            {
-                error = UpdateAnimInfo(process_handle, &animinfo);
-                if (error)
-                {
-                    printf("ERROR: ReadValue failed (code %d).\n", error);
-                    CloseHandle(process_handle);
-                    break;
-                }
-            }
-
-            if (parent)
-            {
-                error = UpdateParent(process_handle, parent_address, &parent_next);
-                if (error)
-                {
-                    printf("ERROR: ReadValue failed (code %d).\n", error);
-                    CloseHandle(process_handle);
-                    break;
-                }
-            }
-
-            if (child)
-            {
-                error = UpdateChild(process_handle, child_address, &child_next);
-                if (error)
-                {
-                    printf("ERROR: ReadValue failed (code %d).\n", error);
-                    CloseHandle(process_handle);
-                    break;
-                }
-            }
-
-            if (memtree)
-            {
-                error = UpdateMemTree(process_handle, memtree_address, memtree_head);
-                if (error)
-                {
-                    printf("ERROR: ReadValue failed (code %d).\n", error);
-                    CloseHandle(process_handle);
-                    break;
-                }
-            }
-
-            if (animinfo > anim_max)
-                anim_max = animinfo;
-
-            if (parent_next > parent_max)
-                parent_max = parent_next;
-            
-            if (child_next > child_max)
-                child_max = child_next;
-
-            for (int i = 0; i < 6; i++)
-            {
-                if (memtree_head[i] > memtree_max)
-                    memtree_max = memtree_head[i];
-            }
-            
-            /* Update display */
+            /* display information */
             SetCursorToLine(start_line);
-            if (frametime)
-                printf("com_frametime: %14d / 2147483647\n", com_frametime);
-            if (reset)
+            if (options.child)
             {
-                printf("entity count: %15d\n", entity_count);
-                printf("snapshot entities: %10d / 2147483647\n", num_snapshot_ents);
+                if (!options.simple)
+                    printf("child_next: %16d\n", child_next);
+                printf("child_max: %17d / 65536\n", child_max);
             }
-            if (gspawn)
-                printf("num entities: %15d / 1022\n", num_ents);
-            if (anim)
+
+            if (options.parent)
             {
-                if (!simple)
-                    printf("anim next: %18d / 4096\n", animinfo);
-                printf("anim max: %19d / 4096\n", anim_max);
+                if (!options.simple)
+                    printf("parent_next: %15d\n", parent_next);
+                printf("parent_max: %16d / 16384\n", parent_max);
             }
-            if (parent)
+
+            if (options.anim)
             {
-                if (!simple)
-                    printf("parent next:  %15d / 16383\n", parent_next);
-                printf("parent max:  %16d / 16383\n", parent_max);
+                if (!options.simple)
+                {
+                    printf("anims_active: %14d\n", anim_in_use);
+                    printf("anims_next: %16d\n", anim_next);
+                }
+                printf("anims_max: %17d / 4096\n", anim_max);
             }
-            if (child)
+
+            if (options.memtree)
             {
-                if (!simple)
-                    printf("child next:  %16d / 65535\n", child_next);
-                printf("child max:  %17d / 65535\n", child_max);
-            }
-            if (memtree)
-            {
-                printf("memtree max:  %15d / 65535\n", memtree_max);
-                if (verbose)
+                if (options.verbose)
                 {
                     for (int i = 0; i < 16; i++)
                     {
                         if (i < 10)
-                            printf("memtree[%d]:  %16d\n", i, memtree_head[i]);
+                            printf("memtree[%d]: %16d\n", i, memtree_next[i]);
                         else
-                            printf("memtree[%d]:  %15d\n", i, memtree_head[i]);
+                            printf("memtree[%d]: %15d\n", i, memtree_next[i]);
                     }
                 }
+                printf("memtree_max: %15d / 65536\n", memtree_max);
             }
 
-            max_line = GetCurrentConsoleLine();
+            if (options.gspawn)
+            {
+                if (!options.simple)
+                    printf("ents_in_use: %15d\n", num_ents_in_use);
+                printf("num_entities: %14d / 1022\n", gLevel.num_entities);
+            }
 
-            Sleep(refresh_rate);
+            if (options.reset)
+            {   
+                printf("current_snap_ents: %9d\n", snapshot_ents);
+                printf("num_snap_ents: %13d / 2147483647\n", num_snapshot_ents);
+            }
+        
+            if (options.frametime)
+            {
+                printf("com_frametime: %13d / 2147483647\n", frametime);
+            }
+
+            Sleep(options.sleep_time);
         }
+
     }
+
 }
