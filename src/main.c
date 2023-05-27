@@ -446,7 +446,7 @@ int main(int argc, char** argv)
         if (strstr(buffer, "plutonium-bootstrapper-win32.exe") != 0)
         {
             printf("Make sure plutonium anticheat is disabled then press enter.\n");
-            scanf("s");
+            getchar();
         }
         }
 
@@ -476,6 +476,8 @@ int main(int argc, char** argv)
                 printf("Error.\n");
             else
                 printf("Done.\n");
+            printf("Press enter to close program.\n");
+            getchar();
             return 0;
         }
 
@@ -486,6 +488,8 @@ int main(int argc, char** argv)
                 printf("Error.\n");
             else
                 printf("Done.\n");
+            printf("Press enter to close program.\n");
+            getchar();
             return 0;
         }
 
@@ -547,6 +551,7 @@ int main(int argc, char** argv)
                 if (gLevel.num_entities == 1022)
                 {
                     DumpEntities(process_handle);
+                    getchar();
                     return 0;
                 }
             }
@@ -635,6 +640,7 @@ int main(int argc, char** argv)
                 if (anim_next == 0)
                 {
                     DumpAnim(process_handle);
+                    getchar();
                     return 0;
                 }
             }
