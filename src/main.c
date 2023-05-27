@@ -518,8 +518,51 @@ int main(int argc, char** argv)
 
         while (1)
         {
+            /* update gspawn */
+            if (options.gspawn)
+            {
+                num_ents_in_use = 0;
+                error = ReadValue(process_handle, gLevel.gentitites, &gEntities, sizeof(gentity_t)*1024);
+                if (error)
+                {
+                    printf("ERROR4: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                } 
+
+                for (int i = 0; i < 1024; i++)
+                {
+                    if (gEntities[i].r.inuse)
+                        num_ents_in_use++;
+                }
+
+                error = ReadValue(process_handle, a_level+0xc, &gLevel.num_entities, sizeof(int));
+                if (error)
+                {
+                    printf("ERROR5: ReadValue failed (code %d).\n", error);
+                    CloseHandle(process_handle);
+                    break;
+                } 
+
+                if (gLevel.num_entities == 1022)
+                {
+                    DumpEntities(process_handle);
+                    return 0;
+                }
+            }
+
+            if (gLevel.num_entities == 0)
+            {
+                /* not in a game */
+                /* reset values */
+                child_max = 0;
+                parent_max = 0;
+                anim_max = 0;
+                memtree_max = 0;
+            }
+
             /* update child */
-            if (options.child)
+            if (options.child && gLevel.num_entities)
             {
                 error = ReadValue(process_handle, gScrVarGlob.childVariableValue, &child_first, sizeof(ChildVariableValue));
                 if (error)
@@ -533,9 +576,11 @@ int main(int argc, char** argv)
                 if (child_next > child_max)
                     child_max = child_next;
             }
+            else   
+                child_next = 0;
 
             /* update parent */
-            if (options.parent)
+            if (options.parent && gLevel.num_entities)
             {
                 error = ReadValue(process_handle, gScrVarGlob.objectVariableValue, &parent_first, sizeof(ObjectVariableValue));
                 if (error)
@@ -549,9 +594,11 @@ int main(int argc, char** argv)
                 if (parent_next > parent_max)
                     parent_max = parent_next;
             }
+            else
+                parent_next = 0;
 
             /* update anim */
-            if (options.anim)
+            if (options.anim && gLevel.num_entities)
             {
                 anim_in_use = 0;
                 error = ReadValue(process_handle, a_gAnimInfo, gAnimInfo, sizeof(XAnimInfo)*4096);
@@ -591,9 +638,11 @@ int main(int argc, char** argv)
                     return 0;
                 }
             }
+            else
+                anim_next = 0, anim_in_use = 0;
 
             /* update memtree */
-            if (options.memtree)
+            if (options.memtree && gLevel.num_entities)
             {
                 error = ReadValue(process_handle, memtree_head, &memtree_next, sizeof(ushort)*16);
                 if (error)
@@ -609,39 +658,8 @@ int main(int argc, char** argv)
                         memtree_max = memtree_next[i];
                 }
             }
-
-            /* update gspawn */
-            if (options.gspawn)
-            {
-                num_ents_in_use = 0;
-                error = ReadValue(process_handle, gLevel.gentitites, &gEntities, sizeof(gentity_t)*1024);
-                if (error)
-                {
-                    printf("ERROR4: ReadValue failed (code %d).\n", error);
-                    CloseHandle(process_handle);
-                    break;
-                } 
-
-                for (int i = 0; i < 1024; i++)
-                {
-                    if (gEntities[i].r.inuse)
-                        num_ents_in_use++;
-                }
-
-                error = ReadValue(process_handle, a_level+0xc, &gLevel.num_entities, sizeof(int));
-                if (error)
-                {
-                    printf("ERROR5: ReadValue failed (code %d).\n", error);
-                    CloseHandle(process_handle);
-                    break;
-                } 
-
-                if (gLevel.num_entities == 1022)
-                {
-                    DumpEntities(process_handle);
-                    return 0;
-                }
-            }
+            else
+                memset(memtree_next, 0, sizeof(ushort)*16);
 
             /* update reset */
             if (options.reset)
@@ -703,14 +721,15 @@ int main(int argc, char** argv)
 
             if (options.memtree)
             {
+                printf("memtree_next[0]: %11d\n", memtree_next[0]);
                 if (options.verbose)
                 {
-                    for (int i = 0; i < 16; i++)
+                    for (int i = 1; i < 16; i++)
                     {
                         if (i < 10)
-                            printf("memtree[%d]: %16d\n", i, memtree_next[i]);
+                            printf("memtree_next[%d]: %11d\n", i, memtree_next[i]);
                         else
-                            printf("memtree[%d]: %15d\n", i, memtree_next[i]);
+                            printf("memtree_next[%d]: %10d\n", i, memtree_next[i]);
                     }
                 }
                 printf("memtree_max: %15d / 65536\n", memtree_max);
