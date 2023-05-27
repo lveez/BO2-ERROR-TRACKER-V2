@@ -2,7 +2,8 @@
 
 The program will work with both redacted and plutonium (make sure to disable the plutonium anticheat). 
 
-![Screenshot 2023-05-24 081109](https://github.com/lveez/BO2-ERROR-TRACKER-V2/assets/65928629/0e37f4fe-ccc7-4230-8486-66f4a4fd187e)
+![Screenshot 2023-05-27 171951](https://github.com/lveez/BO2-ERROR-TRACKER-V2/assets/65928629/e91b9a5d-d47b-4bd9-8eaa-810eeeff39c5)
+
 
 ### Errors tracked:
 - exceeded maximum number of child server script variables
@@ -12,6 +13,8 @@ The program will work with both redacted and plutonium (make sure to disable the
 - MT_AllocIndex: failed allocation of bytes for script usage
 - reset
 - frametime
+
+The program can also dump the entity info and anim info of the current game, this is done automatically when either a G_Spawn error or anim info error occurs.
 
 ----------------
 
@@ -26,6 +29,7 @@ You can launch the program as normal for the default options, this will track al
 - [-f] show frametime info
 
 You can also change some options for how the program displays the information:
+- [-d e/a] dumps entity info or anim info respectively into a txt file. 
 - [-s] show simple info (only max values)
 - [-v] show verbose memtree information (all memtree nodes)
 - [-p] disable plutonium anticheat warning
