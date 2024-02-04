@@ -6,15 +6,13 @@ The program will work with both redacted and plutonium (make sure to disable the
 
 
 ### Errors tracked:
-- exceeded maximum number of child server script variables
-- exceeded maximum number of anim info
-- G_Spawn: no free entities
+- exceeded maximum number of child server script variables (occurs when child_max / child_next hits 65536).
+- exceeded maximum number of anim info (occurs when anim_next / anim_max hits 4096).
+- G_Spawn: no free entities (occurs when num_entities is 1022 and there are no free ents).
 - failed memory allocation for script usage
 - MT_AllocIndex: failed allocation of bytes for script usage
 - reset
 - frametime
-
-The program can also dump the entity info and anim info of the current game, this is done automatically when either a G_Spawn error or anim info error occurs.
 
 ----------------
 
