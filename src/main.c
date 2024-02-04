@@ -489,9 +489,11 @@ int main(int argc, char** argv) {
                 {
                     if (first_free_ent != 0) {
                         int i = ((uint)first_free_ent - (uint)gLevel.gentitites) / sizeof(gentity_t);
-                        while (gEntities[i].nextFree != 0) {
-                            num_ents_free++;
-                            i = ((uint)gEntities[i].nextFree - (uint)gLevel.gentitites) / sizeof(gentity_t);
+                        if (i < 1022) {
+                            while (gEntities[i].nextFree != 0) {
+                                num_ents_free++;
+                                i = ((uint)gEntities[i].nextFree - (uint)gLevel.gentitites) / sizeof(gentity_t);
+                            }
                         }
                     }
                 }
